@@ -88,86 +88,50 @@ export class TareasService {
   
     return this.db.query(sql, values);
   }
-  
-  async create(dto: CrearTareaDTO, idCreador: number) {
-    const client = await this.db.getClient();
+
+  async create(dto: CrearTareaDTO) {
+    const sql = `
+      INSERT INTO tareas (
+        id,
+        titulo,
+        descripcion,
+        story_points,
+        fecha_entrega,
+        id_creador,
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING *
+    `;
+
+    const values = [
+      dto.id,
+      dto.titulo,
+      dto.descripcion ?? null,
+      dto.story_points ?? null,
+      dto.fecha_entrega ?? null,
+      dto.id_creador,
+    ];
 
     try {
-      await client.query('BEGIN');
-      const sqlTarea = `
-        INSERT INTO tareas (
-          id,
-          titulo,
-          descripcion,
-          story_points,
-          fecha_entrega,
-          id_creador
-        )
-        VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING *
-      `;
-
-      const tareaResult = await client.query(sqlTarea, [
-        dto.id,
-        dto.titulo,
-        dto.descripcion ?? null,
-        dto.story_points ?? null,
-        dto.fecha_entrega ?? null,
-        idCreador,
-      ]);
-
-      const tarea = tareaResult.rows[0];
-      const sqlAsignar = `
-        INSERT INTO tarea_asigna_usuario (id_tarea, id_usuario)
-        VALUES ($1, $2)
-      `;
-
-      await client.query(sqlAsignar, [
-        tarea.id,
-        dto.id_usuario_asignado,
-      ]);
-
-      if (dto.categorias?.length) {
-        const sqlCategoria = `
-          INSERT INTO tarea_posee_categoria (id_tarea, id_categoria)
-          VALUES ($1, $2)
-        `;
-
-        for (const idCategoria of dto.categorias) {
-          await client.query(sqlCategoria, [
-            tarea.id,
-            idCategoria,
-          ]);
-        }
+      const rows = await this.db.query(sql, values);
+      // rows es array; retornamos el primer registro insertado
+      return rows[0];
+    } catch (err: any) {
+      // Manejo básico de errores Postgres por código
+      // 23503 = foreign_key_violation, 23505 = unique_violation, 23514 = check_violation
+      if (err.code === '23503') {
+        throw new BadRequestException('Valor de clave foránea no existe (usuario o categoría)');
       }
-
-      await client.query('COMMIT');
-
-      return {
-        ...tarea,
-        usuario_asignado: dto.id_usuario_asignado,
-        categorias: dto.categorias ?? [],
-      };
-
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
+      if (err.code === '23514') {
+        throw new BadRequestException('Violación de restricción CHECK (p. ej. story_points debe ser >= 0)');
+      }
+      // opcional para unique:
+      if (err.code === '23505') {
+        throw new BadRequestException('Violación de unique constraint');
+      }
+      throw new InternalServerErrorException('Error creando tarea');
     }
-
   }
-
-  // tareas.service.ts
-  async findByUsuario(idUsuario: number) {
-      const sql = `
-          SELECT t.* FROM tareas t
-          INNER JOIN tarea_asigna_usuario tau ON t.id = tau.id_tarea
-          WHERE tau.id_usuario = $1`;
-      return this.db.query(sql, [idUsuario]);
-
-  }
-
 
   async update(id: number, dto: ActualizarTareaDTO){
     const sql = 'UPDATE tareas SET titulo = $1, descripcion = $2, estado = $3 WHERE id = $4 RETURNING *';
