@@ -1,6 +1,11 @@
 import { IsString, IsNotEmpty, MaxLength, IsOptional, IsInt, Min, IsDateString, IsArray } from 'class-validator';
 import { Type } from 'class-transformer';
 
+<<<<<<< HEAD
+=======
+
+
+>>>>>>> 16c1a19 (Bastantes Progresos)
 export class CrearTareaDTO {
 
   @IsInt()
@@ -27,10 +32,18 @@ export class CrearTareaDTO {
   @IsInt()
   @Type(() => Number)
   id_usuario_asignado!: number;
+<<<<<<< HEAD
 
   @IsOptional()
   @IsArray()
   @IsInt({ each: true })
   categorias?: number[];
+=======
+>>>>>>> 16c1a19 (Bastantes Progresos)
 
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  categorias?: number[];
 }
+
