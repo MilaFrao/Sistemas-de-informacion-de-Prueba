@@ -88,20 +88,24 @@ export class TareasService {
   
     return this.db.query(sql, values);
   }
+  
+  async create(dto: CrearTareaDTO, idCreador: number) {
+    const client = await this.db.getClient();
 
-  async create(dto: CrearTareaDTO) {
-    const sql = `
-      INSERT INTO tareas (
-        id,
-        titulo,
-        descripcion,
-        story_points,
-        fecha_entrega,
-        id_creador,
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING *
-    `;
+    try {
+      await client.query('BEGIN');
+      const sqlTarea = `
+        INSERT INTO tareas (
+          id,
+          titulo,
+          descripcion,
+          story_points,
+          fecha_entrega,
+          id_creador
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *
+      `;
 
     const values = [
       dto.id,
@@ -132,6 +136,7 @@ export class TareasService {
       throw new InternalServerErrorException('Error creando tarea');
     }
   }
+
 
   async update(id: number, dto: ActualizarTareaDTO){
     const sql = 'UPDATE tareas SET titulo = $1, descripcion = $2, estado = $3 WHERE id = $4 RETURNING *';
