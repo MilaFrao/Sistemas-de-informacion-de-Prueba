@@ -156,8 +156,6 @@ export class TareasService {
     }
   }
 
-<<<<<<< HEAD
-=======
   // tareas.service.ts
   async findByUsuario(idUsuario: number) {
       const sql = `
@@ -167,7 +165,6 @@ export class TareasService {
       return this.db.query(sql, [idUsuario]);
   }
   
->>>>>>> c675c14 (Usuario)
 
   async update(id: number, dto: ActualizarTareaDTO){
     const sql = 'UPDATE tareas SET titulo = $1, descripcion = $2, estado = $3 WHERE id = $4 RETURNING *';
