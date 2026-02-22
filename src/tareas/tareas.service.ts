@@ -156,6 +156,18 @@ export class TareasService {
     }
   }
 
+<<<<<<< HEAD
+=======
+  // tareas.service.ts
+  async findByUsuario(idUsuario: number) {
+      const sql = `
+          SELECT t.* FROM tareas t
+          INNER JOIN tarea_asigna_usuario tau ON t.id = tau.id_tarea
+          WHERE tau.id_usuario = $1`;
+      return this.db.query(sql, [idUsuario]);
+  }
+  
+>>>>>>> c675c14 (Usuario)
 
   async update(id: number, dto: ActualizarTareaDTO){
     const sql = 'UPDATE tareas SET titulo = $1, descripcion = $2, estado = $3 WHERE id = $4 RETURNING *';
