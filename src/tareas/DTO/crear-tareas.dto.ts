@@ -46,8 +46,12 @@ export class CrearTareaDTO {
   @IsOptional()
   @IsArray()
   @IsNumber({}, { each: true })
+<<<<<<< HEAD
   id_usuario_asignado: number[];
 >>>>>>> 18fe442 (Arreglos en tareas y categorías)
+=======
+  id_usuario_asignado!: number[];
+>>>>>>> aa0cc1a (PROYECTO version final 1.0)
 
   @IsOptional()
   @IsArray()
