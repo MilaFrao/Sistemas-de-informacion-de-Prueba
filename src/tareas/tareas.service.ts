@@ -14,8 +14,17 @@ export class TareasService {
     if(tareas.length === 0){
       throw new NotFoundException('Tarea no encontrada');
     }
-    const tarea = tareas[0];
 
+    // Nuevo: Obtener usuarios asignados a la tarea
+    const tarea = tareas[0];
+    const asignadosSql = `
+    SELECT u.id, u.nombre 
+    FROM usuarios u
+    INNER JOIN tarea_asigna_usuario tau ON tau.id_usuario = u.id
+    WHERE tau.id_tarea = $1
+  `;
+  const asignados = await this.db.query(asignadosSql, [idTarea]);
+    
     const comentariosSql = 'SELECT c.id, c.contenido, c.fecha_comentario, u.id AS usuario_id, u.nombre AS usuario_nombre FROM comentarios c JOIN usuarios u ON u.id = c.id_usuario WHERE c.id_tarea = $1 ORDER BY c.fecha_comentario ASC';
     const comentarios = await this.db.query(comentariosSql,[idTarea]);
 
@@ -24,6 +33,7 @@ export class TareasService {
 
     return {
       ...tarea,
+      asignados, // Devolvemos el arreglo completo de usuarios asignados
       comentarios,
       categorias,
     };
@@ -81,36 +91,39 @@ export class TareasService {
   }
 
   async findAll(usuario?: number, estado?: string) {
-    let sql = `
-      SELECT DISTINCT t.id, t.titulo, t.descripcion, t.story_points,
-              t.fecha_entrega, t.estado, t.id_creador, t.fecha_creacion, tau.id_usuario as usuario_asignado
-      FROM tareas t
-      LEFT JOIN tarea_asigna_usuario tau ON t.id = tau.id_tarea
-    `;
-  
     const conditions: string[] = [];
     const values: any[] = [];
-  
-    if (usuario) {
-      values.push(usuario);
-      conditions.push(`tau.id_usuario = $${values.length}`);
-    }
-  
+
     if (estado) {
       values.push(estado);
       conditions.push(`t.estado = $${values.length}`);
     }
-  
+
+    if (usuario) {
+      values.push(usuario);
+      // Filtramos por tareas creadas por el usuario o asignadas al usuario
+      conditions.push(`(t.id_creador = $${values.length} OR EXISTS (SELECT 1 FROM tarea_asigna_usuario tau2 WHERE tau2.id_tarea = t.id AND tau2.id_usuario = $${values.length}))`);
+    }
+
+    let sql = `
+      SELECT t.id, t.titulo, t.descripcion, t.story_points,
+              t.fecha_entrega, t.estado, t.id_creador, t.fecha_creacion,
+              (SELECT COALESCE(array_agg(tau2.id_usuario), ARRAY[]::integer[]) FROM tarea_asigna_usuario tau2 WHERE tau2.id_tarea = t.id) AS usuarios_asignados,
+              (SELECT COALESCE(json_agg(json_build_object('id', cat.id, 'nombre', cat.nombre, 'color', cat.color)), '[]'::json)
+              FROM tarea_posee_categoria tpc JOIN categorias cat ON cat.id = tpc.id_categoria
+              WHERE tpc.id_tarea = t.id) AS categorias
+      FROM tareas t
+    `;
+
     if (conditions.length > 0) {
       sql += ' WHERE ' + conditions.join(' AND ');
     }
-  
+
     return this.db.query(sql, values);
   }
   
   async create(dto: CrearTareaDTO, idCreador: number) {
     const client = await this.db.getClient();
-
     try {
       await client.query('BEGIN');
       const sqlTarea = `
@@ -126,49 +139,73 @@ export class TareasService {
         RETURNING *
       `;
 
-    const values = [
-      dto.id,
-      dto.titulo,
-      dto.descripcion ?? null,
-      dto.story_points ?? null,
-      dto.fecha_entrega ?? null,
-      dto.id_creador,
-    ];
+      const tareaResult = await client.query(sqlTarea, [
+        dto.id,
+        dto.titulo,
+        dto.descripcion ?? null,
+        dto.story_points ?? null,
+        dto.fecha_entrega ?? null,
+        idCreador,
+      ]);
 
-    try {
-      const rows = await this.db.query(sql, values);
-      // rows es array; retornamos el primer registro insertado
-      return rows[0];
-    } catch (err: any) {
-      // Manejo básico de errores Postgres por código
-      // 23503 = foreign_key_violation, 23505 = unique_violation, 23514 = check_violation
-      if (err.code === '23503') {
-        throw new BadRequestException('Valor de clave foránea no existe (usuario o categoría)');
+      const tarea = tareaResult.rows[0];
+      const sqlAsignar = `
+        INSERT INTO tarea_asigna_usuario (id_tarea, id_usuario)
+        VALUES ($1, $2)
+      `;
+
+      await client.query(sqlAsignar, [
+        tarea.id,
+        dto.id_usuario_asignado,
+      ]);
+
+      if (dto.categorias?.length) {
+        const sqlCategoria = `
+          INSERT INTO tarea_posee_categoria (id_tarea, id_categoria)
+          VALUES ($1, $2)
+        `;
+
+        for (const idCategoria of dto.categorias) {
+          await client.query(sqlCategoria, [
+            tarea.id,
+            idCategoria,
+          ]);
+        }
       }
-      if (err.code === '23514') {
-        throw new BadRequestException('Violación de restricción CHECK (p. ej. story_points debe ser >= 0)');
-      }
-      // opcional para unique:
-      if (err.code === '23505') {
-        throw new BadRequestException('Violación de unique constraint');
-      }
-      throw new InternalServerErrorException('Error creando tarea');
+
+      await client.query('COMMIT');
+
+      return {
+        ...tarea,
+        usuario_asignado: dto.id_usuario_asignado,
+        categorias: dto.categorias ?? [],
+      };
+
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
   }
 
   // tareas.service.ts
   async findByUsuario(idUsuario: number) {
     const sql = `
-      SELECT DISTINCT -- Esto evita que la tarea salga repetida
-        t.*, 
-        tau.id_usuario AS usuario_asignado 
+      SELECT t.id, t.titulo, t.descripcion, t.story_points,
+              t.fecha_entrega, t.estado, t.id_creador, t.fecha_creacion,
+              (SELECT COALESCE(array_agg(tau2.id_usuario), ARRAY[]::integer[]) FROM tarea_asigna_usuario tau2 WHERE tau2.id_tarea = t.id) AS usuarios_asignados,
+              (SELECT COALESCE(json_agg(json_build_object('id', cat.id, 'nombre', cat.nombre, 'color', cat.color)), '[]'::json)
+              FROM tarea_posee_categoria tpc JOIN categorias cat ON cat.id = tpc.id_categoria
+              WHERE tpc.id_tarea = t.id) AS categorias
       FROM tareas t
-      LEFT JOIN tarea_asigna_usuario tau ON t.id = tau.id_tarea
-      WHERE tau.id_usuario = $1 OR t.id_creador = $1
+      WHERE t.id_creador = $1 OR EXISTS (
+        SELECT 1 FROM tarea_asigna_usuario tau2 WHERE tau2.id_tarea = t.id AND tau2.id_usuario = $1
+      )
     `;
+
     return this.db.query(sql, [idUsuario]);
   }
-
   async update(id: number, dto: ActualizarTareaDTO){
     const sql = 'UPDATE tareas SET titulo = $1, descripcion = $2, estado = $3 WHERE id = $4 RETURNING *';
 
@@ -184,20 +221,25 @@ export class TareasService {
   async delete(id: number){
     try{
       const sql = 'DELETE FROM tareas WHERE id = $1 RETURNING id';
-      const result = await this.db.query(sql,[id]);
-
-      if(result.length === 0){
-        throw new NotFoundException("Tarea no encontrada");
+      const result = await this.db.query(sql, [id]);
+  
+      // Si el array está vacío, significa que el ID no existía
+      if (result.length === 0) {
+        throw new NotFoundException(`La tarea con ID ${id} no existe`);
       }
-      return{
-        message: 'Tarea eliminada correctamente', id: result[0].id,
+  
+      return {
+        message: 'Tarea y sus registros asociados eliminados correctamente',
+        id: result[0].id,
       };
-    }
-    catch(error:any){
-      if (error.code === '23503'){
-        throw new ConflictException('No se puede eliminar la tarea porque tiene registros asociados', );
+    } catch (error) {
+      // Si lanzaste manualmente el NotFoundException, lo dejamos pasar
+      if (error instanceof NotFoundException) {
+        throw error;
       }
-      throw error;
+  
+      // Cualquier otro error (conexión, sintaxis, etc.)
+      throw new InternalServerErrorException('Error al intentar eliminar la tarea');
     }
   }
 

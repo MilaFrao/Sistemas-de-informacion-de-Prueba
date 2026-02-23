@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, MaxLength, IsOptional, IsInt, Min, IsDateString, IsArray } from 'class-validator';
+import { IsString, IsNotEmpty, MaxLength, IsOptional, IsInt, Min, IsDateString, IsArray, IsNumber } from 'class-validator';
 import { Type } from 'class-transformer';
 
 <<<<<<< HEAD
@@ -29,6 +29,7 @@ export class CrearTareaDTO {
   @IsDateString()
   fecha_entrega?: string;
 
+<<<<<<< HEAD
   @IsInt()
   @Type(() => Number)
   id_usuario_asignado!: number;
@@ -41,6 +42,12 @@ export class CrearTareaDTO {
   categorias?: number[];
 =======
 >>>>>>> 16c1a19 (Bastantes Progresos)
+=======
+  @IsOptional()
+  @IsArray()
+  @IsNumber({}, { each: true })
+  id_usuario_asignado: number[];
+>>>>>>> 18fe442 (Arreglos en tareas y categorías)
 
   @IsOptional()
   @IsArray()
