@@ -206,20 +206,63 @@ export class TareasService {
 
     return this.db.query(sql, [idUsuario]);
   }
-  async update(id: number, dto: ActualizarTareaDTO){
-    const sql = 'UPDATE tareas SET titulo = $1, descripcion = $2, estado = $3 WHERE id = $4 RETURNING *';
 
-    return this.db.query(sql,[
-      dto.titulo,
-      dto.descripcion,
-      dto.estado,
-      id
-    ]);
-
+  //Cristian: Update modificado para actualizar
+  // los datos básicos de la tarea, eliminar las categorías viejas y agregar las nuevas
+  async update(id: number, dto: ActualizarTareaDTO) {
+    const client = await this.db.getClient();
+  
+    try {
+      await client.query('BEGIN');
+  
+      // 1. Actualizamos la tarea (los campos básicos)
+      const sqlTarea = `
+        UPDATE tareas 
+        SET titulo = $1, descripcion = $2, estado = $3 
+        WHERE id = $4 
+        RETURNING *`;
+      
+      const resTarea = await client.query(sqlTarea, [
+        dto.titulo,
+        dto.descripcion,
+        dto.estado,
+        id
+      ]);
+  
+      // 2. Limpiamos y actualizamos las categorías en la tabla intermedia
+      await client.query('DELETE FROM tarea_posee_categoria WHERE id_tarea = $1', [id]);
+  
+      if (dto.categorias && dto.categorias.length > 0) {
+        const sqlCategorias = `
+          INSERT INTO tarea_posee_categoria (id_tarea, id_categoria)
+          SELECT $1, unnest($2::int[])`;
+        
+        await client.query(sqlCategorias, [id, dto.categorias]);
+      }
+  
+      await client.query('COMMIT');
+  
+      // Construimos la respuesta final combinando los datos de la tarea con los del DTO
+      const tareaActualizada = {
+        ...resTarea.rows[0],       // Trae id, titulo, descripcion, estado, etc.
+        categorias: dto.categorias // Agregamos el array de IDs que acabamos de guardar
+      };
+  
+      return tareaActualizada; // Ahora Postman mostrará las categorías
+  
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
-  async delete(id: number){
-    try{
+  //Cristian: Delete modificado para eliminar la tarea
+  // y que la DB se encargue de eliminar los registros relacionados por el CASCADE
+  async delete(id: number) {
+    try {
+      //Solo necesitamos borrar la tarea, la DB borrará el resto por el CASCADE
       const sql = 'DELETE FROM tareas WHERE id = $1 RETURNING id';
       const result = await this.db.query(sql, [id]);
   
