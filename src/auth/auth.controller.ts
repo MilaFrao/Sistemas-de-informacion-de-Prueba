@@ -1,0 +1,21 @@
+import { Controller, Post, Body } from '@nestjs/common';
+import { AuthService } from './auth.service';
+import { LoginDto } from './DTO/login';
+
+@Controller('auth')
+export class AuthController {
+    constructor(private authService: AuthService) {}
+
+    @Post('login')
+    async login(@Body() dto: LoginDto) {
+    return this.authService.login(dto.email, dto.password);
+    }
+
+    @Post('logout')
+    logout() {
+        return{
+            message: 'Logout exitoso, el token ha sido invalidado'
+        }
+    }
+
+}
